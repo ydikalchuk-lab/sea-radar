@@ -128,7 +128,7 @@ test('synthetic malformed envelopes are rejected without throwing', () => {
   expect(convertPositionReport(invalidPositionReport)).toBeNull();
 });
 
-test('synthetic valid numeric limits remain unchanged', () => {
+test('synthetic negative numeric boundaries remain valid', () => {
   const input = nestedSample();
   input.Message.PositionReport.Latitude = -90;
   input.Message.PositionReport.Longitude = -180;
@@ -140,5 +140,16 @@ test('synthetic valid numeric limits remain unchanged', () => {
     lon: -180,
     speedKnots: 102.2,
     courseDeg: 359.9,
+  });
+});
+
+test('synthetic positive latitude and longitude boundaries remain valid', () => {
+  const input = nestedSample();
+  input.Message.PositionReport.Latitude = 90;
+  input.Message.PositionReport.Longitude = 180;
+
+  expect(convertPositionReport(input)).toMatchObject({
+    lat: 90,
+    lon: 180,
   });
 });

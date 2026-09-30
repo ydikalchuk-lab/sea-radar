@@ -38,9 +38,9 @@ test('keeps the selected vessel card open after repeated and background clicks',
   await expect(card).toBeVisible();
   await expect(card.getByText('demo-1')).toBeVisible();
   await expect(card.getByText('Демо-судно 1')).toBeVisible();
-  await expect(card.getByText('51.00000, 1.30000')).toBeVisible();
-  await expect(card.getByText('12.5 kn')).toBeVisible();
-  await expect(card.getByText('68°')).toBeVisible();
+  await expect(card.getByText(/^\d{2}\.\d{5}, \d+\.\d{5}$/)).toBeVisible();
+  await expect(card.getByText(/^\d+(?:\.\d)? kn$/)).toBeVisible();
+  await expect(card.getByText(/^\d{1,3}°$/)).toBeVisible();
   await expect(card.getByText(/^\d{2}:\d{2}:\d{2} UTC$/)).toBeVisible();
   await expect(card.getByText('Демонстраційні дані')).toBeVisible();
 

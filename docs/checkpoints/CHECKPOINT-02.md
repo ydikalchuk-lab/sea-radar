@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-30  
 **Branch:** `feat/sprint-01`  
-**Starting point for the next session:** commit `5247fd5` (`docs: record Sprint 01 checkpoint 02`)
+**Starting point for the next session:** latest commit on `feat/sprint-01`.
 
 ## Delivered
 
@@ -25,7 +25,7 @@
 - Visual browser check on `http://127.0.0.1:3000/`: three markers and “Демонстраційні дані” were visible. Selecting `demo-1` showed its card and the card followed its movement from `51.00000, 1.30000` to `51.01000, 1.34000` over a 2.2-second interval; its marker position changed.
 - Visual arrival/stop check: after a fresh page load, `demo-1` was at its tenth/final point (`51.10000, 1.65000`) after approximately 18.8 seconds. At that point and again 12 seconds later, it remained at that position with `0 kn`, unchanged course, and unchanged arrival timestamp (`07:44:54 UTC`).
 - During hot reload diagnostic verification, tick observations advanced at approximately 2-second intervals; temporary diagnostics were removed before commit. No controlled-time movement tests were added.
-- Reviewed the B-07 test/config/dependency state: one Chromium Playwright project, loopback-only dev server, tile route abort registered before navigation, and no additional test runner dependency. `git diff --check` passed; production build left no `next-env.d.ts` change.
+- Reviewed the B-07 test/config/dependency state: one Chromium Playwright project, loopback-only dev server, tile route abort registered before navigation, and no additional test runner dependency. `git diff --check` reported trailing spaces used for Markdown hard line breaks on the Date and Branch lines; production build left no `next-env.d.ts` change.
 
 ## Scope and limitations
 

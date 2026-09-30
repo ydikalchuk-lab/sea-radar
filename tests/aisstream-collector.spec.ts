@@ -46,6 +46,7 @@ function createCollectorHarness() {
   let closeCalls = 0;
   let nextTimerId = 0;
   const timers = new Map<number, () => void>();
+  const timerCallbacks: (() => void)[] = [];
   const controller = new AbortController();
   const pending = collectSnapshot({
     apiKey: 'synthetic-test-only',
@@ -53,6 +54,7 @@ function createCollectorHarness() {
     now: () => new Date(clock),
     setTimer: (callback) => {
       const id = ++nextTimerId;
+      timerCallbacks.push(callback);
       timers.set(id, callback);
       return id as unknown as ReturnType<typeof setTimeout>;
     },
@@ -81,6 +83,7 @@ function createCollectorHarness() {
     abort: () => controller.abort(),
     closeCalls: () => closeCalls,
     pendingTimerCount: () => timers.size,
+    fireClearedTimer: () => timerCallbacks.at(-1)?.(),
   };
 }
 
@@ -246,4 +249,98 @@ test('synthetic collectedAt uses the injected clock at completion', async () => 
     truncated: false,
     reason: 'window_elapsed',
   });
+});
+
+test('synthetic empty live collection succeeds when its window elapses', async () => {
+  const harness = createCollectorHarness();
+  harness.ready();
+  harness.setNow('2026-01-01T12:00:15.000Z');
+  harness.expireWindow();
+
+  await expect(harness.pending).resolves.toMatchObject({
+    vessels: [],
+    collectedAt: '2026-01-01T12:00:15.000Z',
+    count: 0,
+    truncated: false,
+    reason: 'window_elapsed',
+  });
+  expect(harness.closeCalls()).toBe(1);
+  expect(harness.pendingTimerCount()).toBe(0);
+});
+
+test('synthetic connection timeout before ready rejects and cleans up', async () => {
+  const harness = createCollectorHarness();
+  harness.expireWindow();
+
+  await expect(harness.pending).rejects.toMatchObject({ code: 'connect_failed' });
+  expect(harness.closeCalls()).toBe(1);
+  expect(harness.pendingTimerCount()).toBe(0);
+});
+
+test('synthetic connection error before ready rejects immediately and cleans up', async () => {
+  const harness = createCollectorHarness();
+  harness.fail('connect_failed');
+
+  await expect(harness.pending).rejects.toMatchObject({ code: 'connect_failed' });
+  expect(harness.closeCalls()).toBe(1);
+  expect(harness.pendingTimerCount()).toBe(0);
+});
+
+test('synthetic provider error after partial collection rejects and cleans up', async () => {
+  const harness = createCollectorHarness();
+  harness.ready();
+  for (let index = 0; index < 3; index += 1) {
+    harness.emit(syntheticReport({ ...reportA, id: `synthetic-${index}` }));
+  }
+  harness.fail('provider_error');
+
+  await expect(harness.pending).rejects.toMatchObject({ code: 'provider_error' });
+  expect(harness.closeCalls()).toBe(1);
+  expect(harness.pendingTimerCount()).toBe(0);
+});
+
+test('synthetic disconnect after partial collection rejects and cleans up', async () => {
+  const harness = createCollectorHarness();
+  harness.ready();
+  for (let index = 0; index < 3; index += 1) {
+    harness.emit(syntheticReport({ ...reportA, id: `synthetic-${index}` }));
+  }
+  harness.disconnect();
+
+  await expect(harness.pending).rejects.toMatchObject({ code: 'disconnected' });
+  expect(harness.closeCalls()).toBe(1);
+  expect(harness.pendingTimerCount()).toBe(0);
+});
+
+test('synthetic cancellation rejects partial collection and cleans up', async () => {
+  const harness = createCollectorHarness();
+  harness.ready();
+  harness.emit(syntheticReport(reportA));
+  harness.abort();
+
+  await expect(harness.pending).rejects.toMatchObject({ code: 'internal' });
+  expect(harness.closeCalls()).toBe(1);
+  expect(harness.pendingTimerCount()).toBe(0);
+});
+
+test('synthetic late provider events and timer cannot alter a limit success', async () => {
+  const harness = createCollectorHarness();
+  harness.ready();
+  for (let index = 0; index < 100; index += 1) {
+    harness.emit(syntheticReport({
+      ...reportA,
+      id: `synthetic-${String(index).padStart(3, '0')}`,
+    }));
+  }
+  const result = await harness.pending;
+  const original = structuredClone(result);
+
+  harness.fail('provider_error');
+  harness.disconnect();
+  harness.emit(syntheticReport({ ...reportA, id: 'late-vessel' }));
+  harness.fireClearedTimer();
+
+  expect(result).toEqual(original);
+  expect(harness.closeCalls()).toBe(1);
+  expect(harness.pendingTimerCount()).toBe(0);
 });

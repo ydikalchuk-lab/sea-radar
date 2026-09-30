@@ -203,3 +203,57 @@ test('replaces the previous snapshot on a later attempt and shows the limit suff
   await expect(page.locator('[data-vessel-id="211000002"]')).toBeVisible();
   await expect(page.getByText('AISStream · знімок за 15 с · отримано 12:34:56 UTC · суден: 1 · вибірка неповна · зупинено на ліміті 100')).toBeVisible();
 });
+
+test('renders null name, speed, and course as no data with a neutral icon', async ({ page }) => {
+  const vessel: Vessel = {
+    id: 'synthetic-null-fields',
+    name: null,
+    lat: 51.05,
+    lon: 1.42,
+    speedKnots: null,
+    courseDeg: null,
+    timestamp: '2026-09-30T12:34:00.000Z',
+    source: 'aisstream',
+  };
+  await page.route('**/api/snapshot', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(snapshot([vessel])),
+  }));
+
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Завантажити справжні позиції' }).click();
+  const marker = page.locator('[data-vessel-id="synthetic-null-fields"]');
+  await expect(marker).toHaveAttribute('data-icon', 'neutral');
+  await marker.click();
+
+  const card = page.getByRole('complementary', { name: 'Картка судна' });
+  await expect(card).toBeVisible();
+  await expect(card.getByText('Немає даних')).toHaveCount(3);
+});
+
+test('fails closed on a synthetic inconsistent successful snapshot payload', async ({ page }) => {
+  const vessel: Vessel = {
+    id: 'synthetic-inconsistent-count',
+    name: 'Synthetic vessel',
+    lat: 51.05,
+    lon: 1.42,
+    speedKnots: 12.3,
+    courseDeg: 135.2,
+    timestamp: '2026-09-30T12:34:00.000Z',
+    source: 'aisstream',
+  };
+  await page.route('**/api/snapshot', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ ...snapshot([vessel]), count: 2 }),
+  }));
+
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Завантажити справжні позиції' }).click();
+
+  await expect(page.locator('[data-vessel-id]')).toHaveCount(0);
+  await expect(page.getByRole('complementary', { name: 'Картка судна' })).toHaveCount(0);
+  await expect(page.getByText('Даних на карті немає')).toBeVisible();
+  await expect(page.getByText('Не вдалося отримати дані: Внутрішня помилка сервера')).toBeVisible();
+});

@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-30  
 **Branch:** `feat/sprint-01`  
-**Starting point for the next session:** commit `533aff1` (`test: cover demo vessel selection`)
+**Starting point for the next session:** commit `5247fd5` (`docs: record Sprint 01 checkpoint 02`)
 
 ## Delivered
 

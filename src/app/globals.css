@@ -4,7 +4,8 @@
 
 html,
 body {
-  min-height: 100%;
+  width: 100%;
+  height: 100%;
   margin: 0;
 }
 
@@ -15,8 +16,13 @@ body {
 }
 
 main {
-  display: grid;
-  min-height: 100vh;
-  place-items: center;
-  padding: 24px;
+  width: 100%;
+  height: 100%;
+}
+
+.map-viewport {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 320px;
 }

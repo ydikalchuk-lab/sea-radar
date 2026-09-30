@@ -1,14 +1,27 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AppConfig } from '@/config/app';
+import type { Vessel } from '@/types/vessel';
 
 type LeafletMapProps = {
   config: AppConfig;
+  vessels: Vessel[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
 };
 
-export default function LeafletMap({ config }: LeafletMapProps) {
+export default function LeafletMap({ config, vessels, selectedId, onSelect }: LeafletMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const leafletRef = useRef<typeof import('leaflet') | null>(null);
+  const mapRef = useRef<import('leaflet').Map | null>(null);
+  const vesselLayerRef = useRef<import('leaflet').LayerGroup | null>(null);
+  const onSelectRef = useRef(onSelect);
+  const [mapReady, setMapReady] = useState(false);
+
+  useEffect(() => {
+    onSelectRef.current = onSelect;
+  }, [onSelect]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -21,20 +34,63 @@ export default function LeafletMap({ config }: LeafletMapProps) {
     void import('leaflet').then((leaflet) => {
       if (!active) return;
 
+      leafletRef.current = leaflet;
       map = leaflet.map(container, { maxBounds: config.bounds }).setView(config.center, config.zoom);
       leaflet.tileLayer(config.tileUrl, { attribution: config.tileAttribution }).addTo(map);
+      vesselLayerRef.current = leaflet.layerGroup().addTo(map);
+      mapRef.current = map;
       map.invalidateSize();
 
       resizeObserver = new ResizeObserver(() => map?.invalidateSize({ pan: false }));
       resizeObserver.observe(container);
+      setMapReady(true);
     });
 
     return () => {
       active = false;
       resizeObserver?.disconnect();
-      map?.remove();
+      vesselLayerRef.current?.clearLayers();
+      vesselLayerRef.current = null;
+      mapRef.current?.remove();
+      mapRef.current = null;
+      leafletRef.current = null;
+      setMapReady(false);
     };
   }, [config]);
+
+  useEffect(() => {
+    const leaflet = leafletRef.current;
+    const vesselLayer = vesselLayerRef.current;
+    if (!mapReady || !leaflet || !vesselLayer) return;
+
+    vesselLayer.clearLayers();
+
+    for (const vessel of vessels) {
+      const isNeutral = vessel.courseDeg === null;
+      const symbol = document.createElement('span');
+      symbol.className = `vessel-marker-symbol ${isNeutral ? 'vessel-marker-symbol--neutral' : 'vessel-marker-symbol--course'}`;
+      if (vessel.courseDeg !== null) {
+        symbol.style.transform = `rotate(${vessel.courseDeg}deg)`;
+      }
+
+      const icon = leaflet.divIcon({
+        className: 'vessel-marker-container',
+        html: symbol,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+      });
+      const marker = leaflet.marker([vessel.lat, vessel.lon], { icon }).addTo(vesselLayer);
+      const element = marker.getElement();
+      element?.setAttribute('data-vessel-id', vessel.id);
+      element?.setAttribute('data-icon', isNeutral ? 'neutral' : 'course');
+      element?.setAttribute('data-selected', String(vessel.id === selectedId));
+      if (vessel.courseDeg !== null) {
+        element?.setAttribute('data-course-deg', String(vessel.courseDeg));
+      }
+      element?.setAttribute('aria-label', vessel.name ?? vessel.id);
+      marker.on('click', () => onSelectRef.current(vessel.id));
+    }
+  }, [mapReady, vessels, selectedId]);
 
   return <div ref={containerRef} className="map-viewport" data-testid="map" role="region" aria-label="Карта Дуврської протоки" />;
 }

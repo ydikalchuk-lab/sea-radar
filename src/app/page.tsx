@@ -1,10 +1,9 @@
-import { APP_CONFIG } from '@/config/app';
-import LeafletMap from './components/LeafletMap';
+import DemoMapClient from './components/DemoMapClient';
 
 export default function HomePage() {
   return (
     <main>
-      <LeafletMap config={APP_CONFIG} />
+      <DemoMapClient />
     </main>
   );
 }

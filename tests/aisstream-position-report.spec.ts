@@ -38,6 +38,12 @@ test('synthetic missing and blank names become null', () => {
   expect(convertPositionReport(input)?.name).toBeNull();
 });
 
+test('synthetic padded vessel name is trimmed', () => {
+  const input = nestedSample();
+  input.MetaData.ShipName = '  Synthetic Vessel  ';
+  expect(convertPositionReport(input)?.name).toBe('Synthetic Vessel');
+});
+
 test('synthetic invalid MMSI and timestamp reject the position', () => {
   const missingId = nestedSample();
   delete missingId.MetaData.MMSI;
@@ -104,6 +110,13 @@ test('synthetic zero speed and course remain valid', () => {
     speedKnots: 0,
     courseDeg: 0,
   });
+});
+
+test('synthetic latitude 95 and longitude -200 are rejected together', () => {
+  const input = nestedSample();
+  input.Message.PositionReport.Latitude = 95;
+  input.Message.PositionReport.Longitude = -200;
+  expect(convertPositionReport(input)).toBeNull();
 });
 
 test('synthetic malformed envelopes are rejected without throwing', () => {

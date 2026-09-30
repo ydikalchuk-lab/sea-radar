@@ -3,7 +3,7 @@
 ## Sprint 01 workspace
 
 - Stack: Node.js 24, TypeScript 6.x (`strict`), Next.js App Router, React, Leaflet 1.9.x, and Playwright Test.
-- Start the local app with `npm run dev` at `http://localhost:3000`; run the production build with `npm run build`.
+- Start the local app with `npm run dev` at `http://localhost:3000`; run browser tests with `npx playwright test` and the production build with `npm run build`.
 - Work only from `docs/tasks/SPRINT-01.md` and its acceptance criteria. Do not inspect future sprint or change-request files unless explicitly asked.
 - This sprint uses demo data only. Do not add AIS access, real-data controls, API/server scaffolding, or future-feature placeholders.
 - Never read, print, commit, or expose secrets. Do not place AISStream keys in source, logs, or UI.

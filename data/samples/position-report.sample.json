@@ -1,0 +1,19 @@
+{
+  "MessageType": "PositionReport",
+  "MetaData": {
+    "MMSI": "000000000",
+    "ShipName": "Synthetic Sample Vessel",
+    "Latitude": 51.05,
+    "Longitude": 1.42,
+    "time_utc": "2024-01-01 12:00:00.123456789 +0000 UTC"
+  },
+  "Message": {
+    "PositionReport": {
+      "Latitude": 51.05,
+      "Longitude": 1.42,
+      "Sog": 12.3,
+      "Cog": 135.2,
+      "TrueHeading": 136
+    }
+  }
+}

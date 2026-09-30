@@ -9,6 +9,8 @@ export type AppConfig = {
 };
 
 export const DEMO_TICK_MS = 2000;
+export const AIS_SNAPSHOT_WINDOW_MS = 15_000;
+export const AIS_SNAPSHOT_MAX_VESSELS = 100;
 
 export const APP_CONFIG: AppConfig = {
   bounds: [

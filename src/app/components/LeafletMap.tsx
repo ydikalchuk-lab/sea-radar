@@ -9,9 +9,10 @@ type LeafletMapProps = {
   vessels: Vessel[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  viewResetKey: number;
 };
 
-export default function LeafletMap({ config, vessels, selectedId, onSelect }: LeafletMapProps) {
+export default function LeafletMap({ config, vessels, selectedId, onSelect, viewResetKey }: LeafletMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const leafletRef = useRef<typeof import('leaflet') | null>(null);
   const mapRef = useRef<import('leaflet').Map | null>(null);
@@ -22,6 +23,13 @@ export default function LeafletMap({ config, vessels, selectedId, onSelect }: Le
   useEffect(() => {
     onSelectRef.current = onSelect;
   }, [onSelect]);
+
+  const previousViewResetKeyRef = useRef(viewResetKey);
+  useEffect(() => {
+    if (!mapReady || previousViewResetKeyRef.current === viewResetKey) return;
+    previousViewResetKeyRef.current = viewResetKey;
+    mapRef.current?.setView(config.center, config.zoom);
+  }, [config.center, config.zoom, mapReady, viewResetKey]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -92,5 +100,5 @@ export default function LeafletMap({ config, vessels, selectedId, onSelect }: Le
     }
   }, [mapReady, vessels, selectedId]);
 
-  return <div ref={containerRef} className="map-viewport" data-testid="map" role="region" aria-label="Карта Дуврської протоки" />;
+  return <div ref={containerRef} className="map-viewport" data-testid="map" data-view-reset-key={viewResetKey} role="region" aria-label="Карта Дуврської протоки" />;
 }

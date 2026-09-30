@@ -9,7 +9,13 @@ export default defineConfig({
   },
   projects: [
     {
+      name: 'node',
+      testMatch: '**/aisstream-*.spec.ts',
+      use: { browserName: 'chromium' },
+    },
+    {
       name: 'chromium',
+      testIgnore: '**/aisstream-*.spec.ts',
       use: { ...devices['Desktop Chrome'] },
     },
   ],

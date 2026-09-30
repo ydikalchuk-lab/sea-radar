@@ -1,7 +1,9 @@
 # Checkpoint 02 — Sprint 01
 
-**Date:** 2026-09-30  
-**Branch:** `feat/sprint-01`  
+**Date:** 2026-09-30
+
+**Branch:** `feat/sprint-01`
+
 **Starting point for the next session:** latest commit on `feat/sprint-01`.
 
 ## Delivered

@@ -25,7 +25,7 @@ test('renders three course-oriented demo vessels', async ({ page }) => {
     await expect(marker).toHaveAttribute('data-icon', 'course');
     await expect(marker).toHaveAccessibleName(`Демо-судно ${index + 1}`);
   }
-  await expect(page.getByText('Демонстраційні дані')).toBeVisible();
+  await expect(page.locator('.demo-data-label')).toHaveText('Демонстраційні дані');
 });
 
 test('keeps the selected vessel card open after repeated and background clicks', async ({ page }) => {

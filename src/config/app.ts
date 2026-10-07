@@ -9,7 +9,8 @@ export type AppConfig = {
 };
 
 export const DEMO_TICK_MS = 2000;
-export const AIS_SNAPSHOT_WINDOW_MS = 15_000;
+export const SNAPSHOT_WINDOW_OPTIONS = [15, 30, 60, 120, 180, 240, 300] as const;
+export const AIS_SNAPSHOT_WINDOW_MS = SNAPSHOT_WINDOW_OPTIONS[0] * 1_000;
 export const AIS_SNAPSHOT_MAX_VESSELS = 100;
 
 export const APP_CONFIG: AppConfig = {

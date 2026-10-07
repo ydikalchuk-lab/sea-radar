@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import sample from '../data/samples/position-report.sample.json';
+import classBSample from '../data/samples/standard-class-b-position-report.sample.json';
 import { collectSnapshot } from '../src/lib/aisstream/collector';
 import type { SnapshotErrorCode } from '../src/lib/aisstream/errors';
 import type { AisStreamHandle, AisStreamHandlers } from '../src/lib/aisstream/reader';
@@ -17,9 +18,11 @@ type SyntheticReport = {
 
 function syntheticReport(overrides: SyntheticReport): unknown {
   const raw = structuredClone(sample) as {
+    MessageType?: unknown;
     MetaData: Record<string, unknown>;
     Message: { PositionReport: Record<string, unknown> };
   };
+  raw.MessageType = 'PositionReport';
   raw.MetaData.MMSI = overrides.id;
   raw.MetaData.ShipName = overrides.name;
   raw.MetaData.time_utc = overrides.timeUtc;
@@ -40,11 +43,12 @@ const reportA: SyntheticReport = {
   cog: 135.2,
 };
 
-function createCollectorHarness() {
+function createCollectorHarness(windowMs?: number) {
   let handlers: AisStreamHandlers | undefined;
   let clock = new Date('2026-01-01T12:00:00.000Z');
   let closeCalls = 0;
   let nextTimerId = 0;
+  let scheduledDelay = 0;
   const timers = new Map<number, () => void>();
   const timerCallbacks: (() => void)[] = [];
   const controller = new AbortController();
@@ -52,7 +56,9 @@ function createCollectorHarness() {
     apiKey: 'synthetic-test-only',
     signal: controller.signal,
     now: () => new Date(clock),
-    setTimer: (callback) => {
+    ...(windowMs === undefined ? {} : { windowMs }),
+    setTimer: (callback, delay) => {
+      scheduledDelay = delay;
       const id = ++nextTimerId;
       timerCallbacks.push(callback);
       timers.set(id, callback);
@@ -72,6 +78,7 @@ function createCollectorHarness() {
   return {
     pending,
     emit: (raw: unknown) => handlers?.onMessage(raw),
+    malformed: () => handlers?.onMalformedMessage?.(),
     ready: () => handlers?.onReady(),
     fail: (code: SnapshotErrorCode) => handlers?.onError(code),
     disconnect: () => handlers?.onClose(),
@@ -83,6 +90,7 @@ function createCollectorHarness() {
     abort: () => controller.abort(),
     closeCalls: () => closeCalls,
     pendingTimerCount: () => timers.size,
+    scheduledDelay: () => scheduledDelay,
     fireClearedTimer: () => timerCallbacks.at(-1)?.(),
   };
 }
@@ -321,6 +329,90 @@ test('synthetic cancellation rejects partial collection and cleans up', async ()
   await expect(harness.pending).rejects.toMatchObject({ code: 'internal' });
   expect(harness.closeCalls()).toBe(1);
   expect(harness.pendingTimerCount()).toBe(0);
+});
+
+test('uses the requested collection window and returns its duration', async () => {
+  const harness = createCollectorHarness(120_000);
+  harness.ready();
+  harness.expireWindow();
+
+  await expect(harness.pending).resolves.toMatchObject({ windowSeconds: 120 });
+  expect(harness.scheduledDelay()).toBe(120_000);
+});
+
+test('ignores subscription confirmation control frames in collection diagnostics', async () => {
+  const harness = createCollectorHarness();
+  harness.ready();
+  harness.emit({ MessageType: 'SubscriptionConfirmation' });
+  harness.setNow('2026-01-01T12:00:15.000Z');
+  harness.expireWindow();
+
+  await expect(harness.pending).resolves.toMatchObject({
+    vessels: [],
+    diagnostics: {
+      messages: 0,
+      rejected: 0,
+      byType: {},
+    },
+  });
+});
+
+test('collects class B vessels and records their message type', async () => {
+  const harness = createCollectorHarness();
+  harness.ready();
+  harness.emit(classBSample);
+  harness.setNow('2026-01-01T12:00:15.000Z');
+  harness.expireWindow();
+
+  await expect(harness.pending).resolves.toMatchObject({
+    vessels: [{
+      id: '232053306',
+      source: 'aisstream',
+    }],
+    diagnostics: {
+      messages: 1,
+      rejected: 0,
+      byType: { StandardClassBPositionReport: 1 },
+    },
+  });
+});
+
+test('counts message diagnostics and measures time to connection', async () => {
+  const harness = createCollectorHarness();
+  harness.setNow('2026-01-01T12:00:00.200Z');
+  harness.ready();
+  harness.emit(syntheticReport(reportA));
+  harness.emit({ MessageType: 'StaticDataReport' });
+  harness.emit({ MessageType: 'PositionReport', Message: {} });
+  harness.malformed();
+  harness.setNow('2026-01-01T12:00:15.000Z');
+  harness.expireWindow();
+
+  await expect(harness.pending).resolves.toMatchObject({
+    diagnostics: {
+      connectMs: 200,
+      messages: 4,
+      rejected: 3,
+      byType: { PositionReport: 2, other: 2 },
+    },
+  });
+});
+
+test('attaches diagnostics to collection errors without returning partial vessels', async () => {
+  const harness = createCollectorHarness();
+  harness.ready();
+  harness.emit(syntheticReport(reportA));
+  harness.fail('disconnected');
+
+  await expect(harness.pending).rejects.toMatchObject({
+    code: 'disconnected',
+    diagnostics: {
+      connectMs: 0,
+      messages: 1,
+      rejected: 0,
+      byType: { PositionReport: 1 },
+    },
+  });
 });
 
 test('synthetic late provider events and timer cannot alter a limit success', async () => {

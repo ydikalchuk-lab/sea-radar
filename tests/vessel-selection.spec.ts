@@ -36,6 +36,9 @@ test('keeps the selected demo-2 card after repeated and map-background clicks', 
 
   await marker.click();
   await expect(card).toBeVisible();
-  await page.locator('[data-testid="map"]').click({ position: { x: 120, y: 120 } });
+  const map = page.locator('[data-testid="map"]');
+  const mapBounds = await map.boundingBox();
+  if (!mapBounds) throw new Error('Map must be measurable');
+  await map.click({ position: { x: mapBounds.width - 24, y: mapBounds.height - 24 } });
   await expect(card.getByText('demo-2')).toBeVisible();
 });

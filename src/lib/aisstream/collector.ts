@@ -12,6 +12,13 @@ type TimerHandle = ReturnType<typeof globalThis.setTimeout>;
 type TimerScheduler = (callback: () => void, delay: number) => TimerHandle;
 type TimerCanceller = (timer: TimerHandle) => void;
 
+export type SnapshotDiagnostics = {
+  connectMs: number | null;
+  messages: number;
+  rejected: number;
+  byType: Record<string, number>;
+};
+
 export type SnapshotCollectionResult = {
   vessels: Vessel[];
   collectedAt: string;
@@ -19,6 +26,7 @@ export type SnapshotCollectionResult = {
   count: number;
   truncated: boolean;
   reason: 'window_elapsed' | 'limit_reached';
+  diagnostics: SnapshotDiagnostics;
 };
 
 type CollectorOptions = {
@@ -30,6 +38,7 @@ type CollectorOptions = {
   openSource?: (handlers: AisStreamHandlers) => AisStreamHandle;
   windowMs?: number;
   maxVessels?: number;
+  includeClassB?: boolean;
 };
 
 export async function collectSnapshot({
@@ -38,14 +47,37 @@ export async function collectSnapshot({
   now = () => new Date(),
   setTimer = globalThis.setTimeout,
   clearTimer = globalThis.clearTimeout,
-  openSource = (handlers) => openAisStream({ apiKey, signal, ...handlers }),
+  openSource,
   windowMs = AIS_SNAPSHOT_WINDOW_MS,
   maxVessels = AIS_SNAPSHOT_MAX_VESSELS,
+  includeClassB = false,
 }: CollectorOptions): Promise<SnapshotCollectionResult> {
   if (signal.aborted) throw new SnapshotError('internal');
 
+  const startedAt = now().getTime();
   return new Promise<SnapshotCollectionResult>((resolve, reject) => {
     const vessels = new Map<string, Vessel>();
+    const diagnostics: SnapshotDiagnostics = {
+      connectMs: null,
+      messages: 0,
+      rejected: 0,
+      byType: {},
+    };
+    const isSubscriptionConfirmation = (raw: unknown) =>
+      raw !== null && typeof raw === 'object' && !Array.isArray(raw) &&
+      (raw as Record<string, unknown>).MessageType === 'SubscriptionConfirmation';
+    const recordMessage = (raw?: unknown) => {
+      const message = raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+        ? raw as Record<string, unknown>
+        : null;
+      const messageType = message?.MessageType;
+      const type = messageType === 'PositionReport' || messageType === 'StandardClassBPositionReport'
+        ? messageType
+        : 'other';
+      diagnostics.messages += 1;
+      diagnostics.byType[type] = (diagnostics.byType[type] ?? 0) + 1;
+      return type;
+    };
     let source: AisStreamHandle | undefined;
     let timer: TimerHandle | undefined;
     let ready = false;
@@ -76,10 +108,11 @@ export async function collectSnapshot({
       resolve({
         vessels: [...vessels.values()],
         collectedAt: now().toISOString(),
-        windowSeconds: AIS_SNAPSHOT_WINDOW_MS / 1_000,
+        windowSeconds: windowMs / 1_000,
         count: vessels.size,
         truncated: reason === 'limit_reached',
         reason,
+        diagnostics: { ...diagnostics, byType: { ...diagnostics.byType } },
       });
     };
 
@@ -87,16 +120,29 @@ export async function collectSnapshot({
       if (settled) return;
       settled = true;
       cleanup();
-      reject(new SnapshotError(code));
+      reject(new SnapshotError(code, { ...diagnostics, byType: { ...diagnostics.byType } }));
     };
 
     const onAbort = () => fail('internal');
     const handlers: AisStreamHandlers = {
-      onReady: () => { ready = true; },
-      onMessage: (raw) => {
+      onReady: () => {
+        if (ready) return;
+        ready = true;
+        diagnostics.connectMs = Math.max(0, now().getTime() - startedAt);
+      },
+      onMalformedMessage: () => {
         if (settled) return;
+        recordMessage();
+        diagnostics.rejected += 1;
+      },
+      onMessage: (raw) => {
+        if (settled || isSubscriptionConfirmation(raw)) return;
+        recordMessage(raw);
         const vessel = convertPositionReport(raw);
-        if (!vessel) return;
+        if (!vessel) {
+          diagnostics.rejected += 1;
+          return;
+        }
 
         const current = vessels.get(vessel.id);
         if (!current) {
@@ -122,7 +168,9 @@ export async function collectSnapshot({
     if (settled) return;
 
     try {
-      const openedSource = openSource(handlers);
+      const openedSource = openSource
+        ? openSource(handlers)
+        : openAisStream({ apiKey, signal, includeClassB, ...handlers });
       source = openedSource;
       if (settled) source.close();
     } catch {

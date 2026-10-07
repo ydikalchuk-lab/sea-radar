@@ -1,0 +1,37 @@
+{
+  "MetaData": {
+    "MMSI": 232053306,
+    "MMSI_String": 232053306,
+    "ShipName": "SPIRIT OF PROMETHEUS",
+    "latitude": 50.84277,
+    "longitude": -1.10306,
+    "time_utc": "2026-10-07 12:07:07.761939069 +0000 UTC"
+  },
+  "MessageType": "StandardClassBPositionReport",
+  "Message": {
+    "StandardClassBPositionReport": {
+      "AssignedMode": false,
+      "ClassBBand": true,
+      "ClassBDisplay": false,
+      "ClassBDsc": true,
+      "ClassBMsg22": true,
+      "ClassBUnit": false,
+      "Cog": 360,
+      "CommunicationState": 85146,
+      "CommunicationStateIsItdma": true,
+      "Latitude": 50.84276833333333,
+      "Longitude": -1.1030583333333333,
+      "MessageID": 18,
+      "PositionAccuracy": false,
+      "Raim": false,
+      "RepeatIndicator": 0,
+      "Sog": 0,
+      "Spare1": 0,
+      "Spare2": 0,
+      "Timestamp": 7,
+      "TrueHeading": 511,
+      "UserID": 232053306,
+      "Valid": true
+    }
+  }
+}

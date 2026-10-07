@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import sample from '../data/samples/position-report.sample.json';
+import classBSample from '../data/samples/standard-class-b-position-report.sample.json';
 import { convertPositionReport } from '../src/lib/aisstream/position-report';
 
 function copySample(): Record<string, unknown> {
@@ -27,6 +28,25 @@ test('converts the documented PositionReport sample to the shared Vessel shape',
     timestamp: '2024-01-01T12:00:00.123Z',
     source: 'aisstream',
   });
+});
+
+test('converts the live StandardClassBPositionReport sample using shared validation', () => {
+  expect(convertPositionReport(classBSample)).toEqual({
+    id: '232053306',
+    name: 'SPIRIT OF PROMETHEUS',
+    lat: 50.84276833333333,
+    lon: -1.1030583333333333,
+    speedKnots: 0,
+    courseDeg: null,
+    timestamp: '2026-10-07T12:07:07.761Z',
+    source: 'aisstream',
+  });
+
+  const invalid = structuredClone(classBSample) as {
+    Message: { StandardClassBPositionReport: Record<string, unknown> };
+  };
+  delete invalid.Message.StandardClassBPositionReport.Latitude;
+  expect(convertPositionReport(invalid)).toBeNull();
 });
 
 test('synthetic missing and blank names become null', () => {

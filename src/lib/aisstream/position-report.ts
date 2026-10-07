@@ -75,7 +75,11 @@ export function convertPositionReport(raw: unknown): Vessel | null {
   const message = record(raw);
   const metadata = record(message?.MetaData);
   const payload = record(message?.Message);
-  const positionReport = record(payload?.PositionReport);
+  const positionReport = record(
+    message?.MessageType === 'StandardClassBPositionReport'
+      ? payload?.StandardClassBPositionReport
+      : payload?.PositionReport,
+  );
   if (!metadata || !positionReport) return null;
 
   const id = toVesselId(metadata.MMSI);

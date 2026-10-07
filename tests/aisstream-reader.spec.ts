@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { expect, test } from '@playwright/test';
 import { GET } from '../src/app/api/snapshot/route';
-import { readFirstRawMessage } from '../src/lib/aisstream/reader';
+import { buildSubscription, openAisStream, readFirstRawMessage } from '../src/lib/aisstream/reader';
 
 type FakeSocket = EventEmitter & {
   sent: string[];
@@ -46,6 +46,44 @@ function createReaderOptions(socket: FakeSocket) {
     cleared,
   };
 }
+
+test('builds the default and class B AISStream subscriptions', () => {
+  expect(buildSubscription('synthetic-key')).toEqual({
+    APIKey: 'synthetic-key',
+    BoundingBoxes: [[[50.75, 0.95], [51.25, 1.95]]],
+    FilterMessageTypes: ['PositionReport'],
+  });
+  expect(buildSubscription('synthetic-key', { includeClassB: true })).toEqual({
+    APIKey: 'synthetic-key',
+    BoundingBoxes: [[[50.75, 0.95], [51.25, 1.95]]],
+    FilterMessageTypes: ['PositionReport', 'StandardClassBPositionReport'],
+  });
+});
+
+test('counts malformed JSON through the malformed-message handler without exposing it', () => {
+  const socket = createFakeSocket();
+  const controller = new AbortController();
+  let malformedCount = 0;
+  const errors: string[] = [];
+  const options = {
+    apiKey: 'dummy-not-a-real-key',
+    signal: controller.signal,
+    socketFactory: () => socket,
+    onReady: () => undefined,
+    onMessage: () => undefined,
+    onMalformedMessage: () => { malformedCount += 1; },
+    onError: (code: string) => { errors.push(code); },
+    onClose: () => undefined,
+  } as Parameters<typeof openAisStream>[0];
+
+  openAisStream(options);
+  socket.emit('open');
+  socket.emit('message', Buffer.from('{broken json'), true);
+
+  expect(malformedCount).toBe(1);
+  expect(errors).toEqual([]);
+  expect(socket.closeCalls).toBe(0);
+});
 
 test('starts the 15-second deadline before constructing the socket', async () => {
   const order: string[] = [];
@@ -165,6 +203,30 @@ test('aborts the socket and rejects the pending read when the request is cancell
   await expect(pending).rejects.toMatchObject({ code: 'internal' });
   expect(socket.closeCalls).toBe(1);
   expect(fixture.cleared).toHaveLength(1);
+});
+
+test('rejects invalid snapshot parameters before checking the API key', async () => {
+  const originalValue = process.env.AISSTREAM_API_KEY;
+  delete process.env.AISSTREAM_API_KEY;
+
+  try {
+    const response = await GET(new Request('http://localhost/api/snapshot?window=16'));
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: 'invalid_params',
+        message: 'Некоректні параметри запиту',
+      },
+      diagnostics: null,
+    });
+  } finally {
+    if (originalValue === undefined) {
+      delete process.env.AISSTREAM_API_KEY;
+    } else {
+      process.env.AISSTREAM_API_KEY = originalValue;
+    }
+  }
 });
 
 test('returns the stable missing-key response without opening a socket', async () => {

@@ -1,24 +1,174 @@
 import { expect, test } from '@playwright/test';
 import type { Vessel } from '../src/types/vessel';
 
-const snapshot = (vessels: Vessel[], collectedAt = '2026-09-30T12:34:56.000Z', truncated = false) => ({
+const snapshot = (
+  vessels: Vessel[],
+  collectedAt = '2026-09-30T12:34:56.000Z',
+  truncated = false,
+  windowSeconds = 15,
+  includeClassB = false,
+) => ({
   ok: true,
   vessels,
   collectedAt,
-  windowSeconds: 15,
+  windowSeconds,
   count: vessels.length,
   truncated,
   reason: truncated ? 'limit_reached' : 'window_elapsed',
+  includeClassB,
+  diagnostics: {
+    connectMs: 250,
+    messages: 11,
+    rejected: 0,
+    byType: { PositionReport: 11 },
+  },
 });
 
 test.beforeEach(async ({ page }) => {
   await page.route('https://tile.openstreetmap.org/**', (route) => route.abort());
 });
 
+test('sends the selected window and class B option and reflects them in the caption', async ({ page }) => {
+  const vessel: Vessel = {
+    id: 'settings-vessel',
+    name: 'Налаштування',
+    lat: 51.05,
+    lon: 1.42,
+    speedKnots: null,
+    courseDeg: null,
+    timestamp: '2026-09-30T12:34:00.000Z',
+    source: 'aisstream',
+  };
+  let requestedUrl = '';
+  await page.route((url) => url.pathname === '/api/snapshot', (route) => {
+    requestedUrl = route.request().url();
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(snapshot([vessel], '2026-09-30T12:34:56.000Z', false, 120, true)),
+    });
+  });
+
+  await page.goto('/');
+  const windowControl = page.getByRole('slider', { name: 'Вікно збору' });
+  await expect(windowControl).toHaveAttribute('aria-valuetext', '15 секунд');
+  const classBControl = page.getByRole('checkbox', { name: 'Малі судна (клас B)' });
+  await expect(classBControl).not.toBeChecked();
+  await windowControl.press('ArrowRight');
+  await windowControl.press('ArrowRight');
+  await windowControl.press('ArrowRight');
+  await classBControl.check();
+  await page.getByRole('button', { name: 'Завантажити справжні позиції' }).click();
+
+  await expect.poll(() => requestedUrl).not.toBe('');
+  const search = new URL(requestedUrl).searchParams;
+  expect(search.get('window')).toBe('120');
+  expect(search.get('classB')).toBe('1');
+  await expect(page.getByRole('slider', { name: 'Вікно збору' })).toHaveAttribute('aria-valuetext', '2 хвилини');
+  await expect(page.getByText('AISStream')).toBeVisible();
+  await expect(page.getByText('1 судно')).toBeVisible();
+  await expect(page.getByText('Знімок · 12:34:56 UTC')).toBeVisible();
+  await expect(page.getByText('Вікно · 120 с')).toBeVisible();
+  await expect(page.getByText('Вибірка неповна')).toBeVisible();
+  await expect(page.getByText('Клас B: увімкнено')).toBeVisible();
+  await expect(page.getByText('Запит: 120 с · клас B: увімкнено')).toHaveCount(0);
+  await expect(page.getByText(/Спроба .*отримано суден/)).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.getByRole('slider', { name: 'Вікно збору' })).toHaveAttribute('aria-valuetext', '15 секунд');
+  await expect(page.getByRole('checkbox', { name: 'Малі судна (клас B)' })).not.toBeChecked();
+});
+
+test('shows snapshot diagnostics only after expanding the details section', async ({ page }) => {
+  const vessel: Vessel = {
+    id: 'diagnostics-vessel',
+    name: null,
+    lat: 51.05,
+    lon: 1.42,
+    speedKnots: null,
+    courseDeg: null,
+    timestamp: '2026-09-30T12:34:00.000Z',
+    source: 'aisstream',
+  };
+  await page.route((url) => url.pathname === '/api/snapshot', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(snapshot([vessel])),
+  }));
+
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Завантажити справжні позиції' }).click();
+  const details = page.getByText('Докладно');
+  await expect(details).toBeVisible();
+  await expect(page.getByText(/з'єднання: 0,3 с/)).not.toBeVisible();
+  await details.click();
+  await expect(page.getByText("з'єднання: 0,3 с · повідомлень: 11 (PositionReport: 11) · відкинуто: 0 · суден: 1")).toBeVisible();
+});
+
+test('shows elapsed time as progress for the selected collection window', async ({ page }) => {
+  let releaseResponse!: () => void;
+  const responseGate = new Promise<void>((resolve) => { releaseResponse = resolve; });
+  await page.route((url) => url.pathname === '/api/snapshot', async (route) => {
+    await responseGate;
+    try {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(snapshot([])) });
+    } catch {
+      // The browser has already aborted the request.
+    }
+  });
+  await page.clock.install({ time: new Date('2026-09-30T12:00:00.000Z') });
+  await page.goto('/');
+
+  await page.getByRole('button', { name: 'Завантажити справжні позиції' }).click();
+  const progress = page.getByRole('progressbar', { name: 'Орієнтовний час збору' });
+  await expect(progress).toBeVisible();
+  await expect(progress).toHaveAttribute('aria-valuenow', '0');
+  await page.clock.runFor(7_500);
+  await expect.poll(async () => Number(await progress.getAttribute('aria-valuenow'))).toBeGreaterThanOrEqual(49);
+  await expect.poll(async () => Number(await progress.getAttribute('aria-valuenow'))).toBeLessThanOrEqual(51);
+  await expect(page.getByText(/Орієнтовно · .*\/ 15 с/)).toHaveCount(0);
+  await page.clock.runFor(7_500);
+  await expect(progress).toHaveAttribute('aria-valuenow', '99');
+  await expect(progress).toHaveAttribute('aria-valuetext', 'Часове вікно 15 секунд минуло; очікуємо відповідь');
+  await expect(page.getByText('Час вікна минув · очікуємо відповідь')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Скасувати' }).click();
+  await expect(progress).toHaveCount(0);
+  releaseResponse();
+});
+
+test('cancels a pending snapshot and clears the displayed vessel set', async ({ page }) => {
+  let releaseResponse!: () => void;
+  const responseGate = new Promise<void>((resolve) => { releaseResponse = resolve; });
+  await page.route((url) => url.pathname === '/api/snapshot', async (route) => {
+    await responseGate;
+    try {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(snapshot([])) });
+    } catch {
+      // The browser has already aborted the request.
+    }
+  });
+
+  await page.goto('/');
+  const slider = page.getByRole('slider', { name: 'Вікно збору' });
+  const classB = page.getByRole('checkbox', { name: 'Малі судна (клас B)' });
+  await page.getByRole('button', { name: 'Завантажити справжні позиції' }).click();
+  await expect(page.getByRole('button', { name: 'Скасувати' })).toBeVisible();
+  await expect(slider).toBeDisabled();
+  await expect(classB).toBeDisabled();
+  await page.getByRole('button', { name: 'Скасувати' }).click();
+
+  await expect(page.getByRole('status')).toHaveText('Завантаження скасовано');
+  await expect(page.locator('.demo-data-label')).toHaveText('Даних на карті немає');
+  await expect(page.locator('[data-vessel-id]')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Завантажити справжні позиції' })).toBeVisible();
+  releaseResponse();
+});
+
 test('keeps the demo visible and moving while a snapshot request is pending', async ({ page }) => {
   let releaseResponse!: () => void;
   const responseGate = new Promise<void>((resolve) => { releaseResponse = resolve; });
-  await page.route('**/api/snapshot', async (route) => {
+  await page.route((url) => url.pathname === '/api/snapshot', async (route) => {
     await responseGate;
     await route.fulfill({
       status: 502,
@@ -46,7 +196,8 @@ test('keeps the demo visible and moving while a snapshot request is pending', as
 
   try {
     await button.click();
-    await expect(button).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Скасувати' })).toBeVisible();
+    await expect(page.getByRole('slider', { name: 'Вікно збору' })).toBeDisabled();
     await expect(page.getByText('Завантаження…')).toBeVisible();
     await expect(page.locator('[data-vessel-id="demo-1"]')).toBeVisible();
     await expect(card).toBeVisible();
@@ -61,6 +212,30 @@ test('keeps the demo visible and moving while a snapshot request is pending', as
   await expect(button).toBeEnabled();
 });
 
+test('formats a dozen vessels with the correct Ukrainian count form', async ({ page }) => {
+  const vessels: Vessel[] = Array.from({ length: 12 }, (_, index) => ({
+    id: `count-vessel-${index}`,
+    name: null,
+    lat: 51 + index * 0.001,
+    lon: 1.4 + index * 0.001,
+    speedKnots: null,
+    courseDeg: null,
+    timestamp: '2026-09-30T12:34:00.000Z',
+    source: 'aisstream',
+  }));
+  await page.route((url) => url.pathname === '/api/snapshot', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(snapshot(vessels)),
+  }));
+
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Завантажити справжні позиції' }).click();
+
+  await expect(page.getByText('12 суден')).toBeVisible();
+  await expect(page.locator('[data-vessel-id]')).toHaveCount(12);
+});
+
 test('renders one returned AIS vessel in the existing marker and detail card', async ({ page }) => {
   const vessel: Vessel = {
     id: '211000001',
@@ -72,7 +247,7 @@ test('renders one returned AIS vessel in the existing marker and detail card', a
     timestamp: '2026-09-30T12:34:00.000Z',
     source: 'aisstream',
   };
-  await page.route('**/api/snapshot', (route) => route.fulfill({
+  await page.route((url) => url.pathname === '/api/snapshot', (route) => route.fulfill({
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify(snapshot([vessel])),
@@ -81,8 +256,12 @@ test('renders one returned AIS vessel in the existing marker and detail card', a
   await page.goto('/');
   await page.getByRole('button', { name: 'Завантажити справжні позиції' }).click();
 
-  await expect(page.getByText('AISStream · знімок за 15 с · отримано 12:34:56 UTC · суден: 1 · вибірка неповна')).toBeVisible();
-  await expect(page.getByText('Спроба 12:34:56 UTC: отримано суден: 1')).toBeVisible();
+  await expect(page.getByText('AISStream')).toBeVisible();
+  await expect(page.getByText('1 судно')).toBeVisible();
+  await expect(page.getByText('Знімок · 12:34:56 UTC')).toBeVisible();
+  await expect(page.getByText('Вікно · 15 с')).toBeVisible();
+  await expect(page.getByText('Вибірка неповна')).toBeVisible();
+  await expect(page.getByText('Спроба 12:34:56 UTC: отримано суден: 1')).toHaveCount(0);
   const marker = page.locator('[data-vessel-id="211000001"]');
   await expect(marker).toBeVisible();
   await expect(marker).toHaveAttribute('data-icon', 'course');
@@ -95,7 +274,7 @@ test('renders one returned AIS vessel in the existing marker and detail card', a
 });
 
 test('shows a successful empty collection without claiming the area has no vessels', async ({ page }) => {
-  await page.route('**/api/snapshot', (route) => route.fulfill({
+  await page.route((url) => url.pathname === '/api/snapshot', (route) => route.fulfill({
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify(snapshot([])),
@@ -112,7 +291,7 @@ test('shows a successful empty collection without claiming the area has no vesse
 });
 
 test('preserves the demo set and reports the timestamped API error', async ({ page }) => {
-  await page.route('**/api/snapshot', (route) => route.fulfill({
+  await page.route((url) => url.pathname === '/api/snapshot', (route) => route.fulfill({
     status: 502,
     contentType: 'application/json',
     body: JSON.stringify({
@@ -133,7 +312,7 @@ test('preserves the demo set and reports the timestamped API error', async ({ pa
 });
 
 test('uses fixed internal copy for an unrecognized API error code', async ({ page }) => {
-  await page.route('**/api/snapshot', (route) => route.fulfill({
+  await page.route((url) => url.pathname === '/api/snapshot', (route) => route.fulfill({
     status: 502,
     contentType: 'application/json',
     body: JSON.stringify({
@@ -150,8 +329,34 @@ test('uses fixed internal copy for an unrecognized API error code', async ({ pag
   await expect(page.getByText('untrusted provider detail')).toHaveCount(0);
 });
 
+test('filters untrusted diagnostic type names and provider messages', async ({ page }) => {
+  await page.route((url) => url.pathname === '/api/snapshot', (route) => route.fulfill({
+    status: 502,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      ok: false,
+      attemptedAt: '2026-09-30T12:34:56.000Z',
+      error: { code: 'provider_error', message: 'RAW_PROVIDER_ERROR_MUST_NOT_APPEAR' },
+      diagnostics: {
+        connectMs: null,
+        messages: 1,
+        rejected: 1,
+        byType: { RAW_PROVIDER_TYPE_MUST_NOT_APPEAR: 1, other: 1 },
+      },
+    }),
+  }));
+
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Завантажити справжні позиції' }).click();
+  await page.getByText('Докладно').click();
+
+  await expect(page.getByText(/з'єднання: не відкрито · повідомлень: 1 \(other: 1\) · відкинуто: 1/)).toBeVisible();
+  await expect(page.getByText('RAW_PROVIDER_ERROR_MUST_NOT_APPEAR')).toHaveCount(0);
+  await expect(page.getByText('RAW_PROVIDER_TYPE_MUST_NOT_APPEAR')).toHaveCount(0);
+});
+
 test('reports an unparseable response without a timestamp and preserves the displayed set', async ({ page }) => {
-  await page.route('**/api/snapshot', (route) => route.fulfill({
+  await page.route((url) => url.pathname === '/api/snapshot', (route) => route.fulfill({
     status: 502,
     contentType: 'application/json',
     body: '',
@@ -163,12 +368,6 @@ test('reports an unparseable response without a timestamp and preserves the disp
   await expect(page.locator('.demo-data-label')).toBeVisible();
   await expect(page.getByText('Спроба: не вдалося отримати дані: Немає відповіді сервера')).toBeVisible();
   await expect(page.locator('.snapshot-page-hint')).toHaveText('Після оновлення сторінки знову показуються демонстраційні дані');
-  await expect(page.locator('.snapshot-panel > *')).toHaveText([
-    'Завантажити справжні позиції',
-    'Демонстраційні дані',
-    'Спроба: не вдалося отримати дані: Немає відповіді сервера',
-    'Після оновлення сторінки знову показуються демонстраційні дані',
-  ]);
   await expect(page.locator('[data-vessel-id]')).toHaveCount(3);
 });
 
@@ -184,7 +383,7 @@ test('keeps the last nonempty AIS snapshot and source label after a later error'
     timestamp: '2026-09-30T12:34:00.000Z',
     source: 'aisstream',
   };
-  await page.route('**/api/snapshot', (route) => {
+  await page.route((url) => url.pathname === '/api/snapshot', (route) => {
     requests += 1;
     return route.fulfill(requests === 1 ? {
       status: 200,
@@ -211,7 +410,9 @@ test('keeps the last nonempty AIS snapshot and source label after a later error'
 
   await button.click();
 
-  await expect(page.getByText('AISStream · знімок за 15 с · отримано 12:00:00 UTC · суден: 1 · вибірка неповна')).toBeVisible();
+  await expect(page.getByText('1 судно')).toBeVisible();
+  await expect(page.getByText('Знімок · 12:00:00 UTC')).toBeVisible();
+  await expect(page.getByText('Вибірка неповна')).toBeVisible();
   await expect(page.getByText('Спроба 12:01:00 UTC: не вдалося отримати дані: Не вдалося підключитися до джерела')).toBeVisible();
   await expect(page.locator('[data-vessel-id="preserved-snapshot-vessel"]')).toBeVisible();
   await expect(card).toBeVisible();
@@ -229,7 +430,7 @@ test('does not move a real snapshot when the browser clock advances', async ({ p
     timestamp: '2026-09-30T11:59:00.000Z',
     source: 'aisstream',
   };
-  await page.route('**/api/snapshot', (route) => route.fulfill({
+  await page.route((url) => url.pathname === '/api/snapshot', (route) => route.fulfill({
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify(snapshot([vessel], '2026-09-30T12:00:00.000Z')),
@@ -267,7 +468,7 @@ test('keeps the previous AIS set and selected card while a repeat request is pen
     timestamp: '2026-09-30T12:34:00.000Z',
     source: 'aisstream',
   };
-  await page.route('**/api/snapshot', async (route) => {
+  await page.route((url) => url.pathname === '/api/snapshot', async (route) => {
     requests += 1;
     if (requests === 1) {
       await route.fulfill({
@@ -296,9 +497,12 @@ test('keeps the previous AIS set and selected card while a repeat request is pen
 
   try {
     await button.click();
-    await expect(button).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Скасувати' })).toBeVisible();
+    await expect(page.getByRole('slider', { name: 'Вікно збору' })).toBeDisabled();
     await expect(page.getByText('Завантаження…')).toBeVisible();
-    await expect(page.locator('.demo-data-label')).toHaveText('AISStream · знімок за 15 с · отримано 12:00:00 UTC · суден: 1 · вибірка неповна');
+    await expect(page.getByText('1 судно')).toBeVisible();
+    await expect(page.getByText('Знімок · 12:00:00 UTC')).toBeVisible();
+    await expect(page.getByText('Вибірка неповна')).toBeVisible();
     await expect(marker).toBeVisible();
     await expect(card).toBeVisible();
   } finally {
@@ -306,7 +510,9 @@ test('keeps the previous AIS set and selected card while a repeat request is pen
   }
 
   await expect(button).toBeEnabled();
-  await expect(page.locator('.demo-data-label')).toHaveText('AISStream · знімок за 15 с · отримано 12:00:00 UTC · суден: 1 · вибірка неповна');
+  await expect(page.getByText('1 судно')).toBeVisible();
+  await expect(page.getByText('Знімок · 12:00:00 UTC')).toBeVisible();
+  await expect(page.getByText('Вибірка неповна')).toBeVisible();
   await expect(page.getByText('Спроба 12:34:56 UTC: за час збору позицій не отримано')).toBeVisible();
   await expect(marker).toBeVisible();
   await expect(card).toBeVisible();
@@ -324,7 +530,7 @@ test('requests one initial-view reset for the first nonempty snapshot only', asy
     timestamp: '2026-09-30T12:34:00.000Z',
     source: 'aisstream',
   });
-  await page.route('**/api/snapshot', (route) => {
+  await page.route((url) => url.pathname === '/api/snapshot', (route) => {
     requests += 1;
     return route.fulfill({
       status: 200,
@@ -356,7 +562,7 @@ test('preserves the panned map view after a later nonempty snapshot', async ({ p
     timestamp: '2026-09-30T12:34:00.000Z',
     source: 'aisstream',
   };
-  await page.route('**/api/snapshot', (route) => route.fulfill({
+  await page.route((url) => url.pathname === '/api/snapshot', (route) => route.fulfill({
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify(snapshot([vessel])),
@@ -427,7 +633,7 @@ test('refreshes the selected vessel card when its id remains in the new snapshot
     timestamp,
     source: 'aisstream',
   });
-  await page.route('**/api/snapshot', (route) => {
+  await page.route((url) => url.pathname === '/api/snapshot', (route) => {
     requests += 1;
     const vessel = requests === 1
       ? makeVessel(51.05, '2026-09-30T12:00:00.000Z')
@@ -461,7 +667,7 @@ test('refreshes the selected vessel card when its id remains in the new snapshot
 
 test('replaces the previous snapshot on a later attempt and shows the limit suffix', async ({ page }) => {
   let requests = 0;
-  await page.route('**/api/snapshot', (route) => {
+  await page.route((url) => url.pathname === '/api/snapshot', (route) => {
     requests += 1;
     const vessel: Vessel = {
       id: requests === 1 ? '211000001' : '211000002',
@@ -493,7 +699,11 @@ test('replaces the previous snapshot on a later attempt and shows the limit suff
   await expect(page.locator('[data-vessel-id="211000001"]')).toHaveCount(0);
   await expect(page.locator('[data-vessel-id="211000002"]')).toBeVisible();
   await expect(page.getByRole('complementary', { name: 'Картка судна' })).toHaveCount(0);
-  await expect(page.getByText('AISStream · знімок за 15 с · отримано 12:34:56 UTC · суден: 1 · вибірка неповна · зупинено на ліміті 100')).toBeVisible();
+  await expect(page.getByText('AISStream')).toBeVisible();
+  await expect(page.getByText('1 судно')).toBeVisible();
+  await expect(page.getByText('Знімок · 12:34:56 UTC')).toBeVisible();
+  await expect(page.getByText('Ліміт: 100')).toBeVisible();
+  await expect(page.getByText('Вибірка неповна')).toBeVisible();
 });
 
 test('renders null name, speed, and course as no data with a neutral icon', async ({ page }) => {
@@ -507,7 +717,7 @@ test('renders null name, speed, and course as no data with a neutral icon', asyn
     timestamp: '2026-09-30T12:34:00.000Z',
     source: 'aisstream',
   };
-  await page.route('**/api/snapshot', (route) => route.fulfill({
+  await page.route((url) => url.pathname === '/api/snapshot', (route) => route.fulfill({
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify(snapshot([vessel])),
@@ -535,7 +745,7 @@ test('fails closed on a synthetic inconsistent successful snapshot payload', asy
     timestamp: '2026-09-30T12:34:00.000Z',
     source: 'aisstream',
   };
-  await page.route('**/api/snapshot', (route) => route.fulfill({
+  await page.route((url) => url.pathname === '/api/snapshot', (route) => route.fulfill({
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify({ ...snapshot([vessel]), count: 2 }),
@@ -550,7 +760,7 @@ test('fails closed on a synthetic inconsistent successful snapshot payload', asy
 });
 
 test('keeps the snapshot panel compact and within a short mobile viewport', async ({ page }) => {
-  await page.route('**/api/snapshot', (route) => route.fulfill({
+  await page.route((url) => url.pathname === '/api/snapshot', (route) => route.fulfill({
     status: 502,
     contentType: 'application/json',
     body: JSON.stringify({

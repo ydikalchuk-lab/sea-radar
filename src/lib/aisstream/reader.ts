@@ -7,6 +7,7 @@ const AISSTREAM_URL = 'wss://stream.aisstream.io/v0/stream';
 export type AisStreamHandlers = {
   onReady: () => void;
   onMessage: (message: unknown) => void;
+  onMalformedMessage?: () => void;
   onError: (code: SnapshotErrorCode) => void;
   onClose: () => void;
 };
@@ -29,9 +30,21 @@ type TimerHandle = ReturnType<typeof globalThis.setTimeout>;
 type TimerScheduler = (callback: () => void, delay: number) => TimerHandle;
 type TimerCanceller = (timer: TimerHandle) => void;
 
+export function buildSubscription(apiKey: string, { includeClassB = false }: { includeClassB?: boolean } = {}) {
+  const [southWest, northEast] = APP_CONFIG.bounds;
+  return {
+    APIKey: apiKey,
+    BoundingBoxes: [[southWest, northEast]],
+    FilterMessageTypes: includeClassB
+      ? ['PositionReport', 'StandardClassBPositionReport']
+      : ['PositionReport'],
+  };
+}
+
 type ReaderOptions = {
   apiKey: string;
   signal: AbortSignal;
+  includeClassB?: boolean;
   now?: () => Date;
   setTimeout?: TimerScheduler;
   clearTimeout?: TimerCanceller;
@@ -60,9 +73,11 @@ export function openAisStream({
   signal,
   onReady,
   onMessage,
+  onMalformedMessage,
   onError,
   onClose,
   socketFactory = (url, options) => new WebSocket(url, options),
+  includeClassB = false,
 }: ReaderOptions & AisStreamHandlers): AisStreamHandle {
   let socket: SocketLike | undefined;
   let subscribed = false;
@@ -103,14 +118,7 @@ export function openAisStream({
   activeSocket.on('open', () => {
     if (closed) return;
     try {
-      const [southWest, northEast] = APP_CONFIG.bounds;
-      activeSocket.send(
-        JSON.stringify({
-          APIKey: apiKey,
-          BoundingBoxes: [[southWest, northEast]],
-          FilterMessageTypes: ['PositionReport'],
-        }),
-      );
+      activeSocket.send(JSON.stringify(buildSubscription(apiKey, { includeClassB })));
       subscribed = true;
       onReady();
     } catch {
@@ -124,18 +132,17 @@ export function openAisStream({
     try {
       message = decodeMessage(data);
     } catch {
-      fail('provider_error');
-      return;
-    }
-    if (isProviderError(message)) {
-      fail('provider_error');
+      if (onMalformedMessage) onMalformedMessage();
+      else fail('provider_error');
       return;
     }
     try {
       onMessage(message);
     } catch {
       fail('internal');
+      return;
     }
+    if (isProviderError(message)) fail('provider_error');
   });
 
   activeSocket.on('error', () => {

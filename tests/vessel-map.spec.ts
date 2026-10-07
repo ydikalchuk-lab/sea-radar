@@ -55,3 +55,25 @@ test('keeps the selected vessel card open after repeated and background clicks',
   await expect(card).toBeVisible();
   await expect(page.getByRole('button', { name: /close|закрити/i })).toHaveCount(0);
 });
+
+test('keeps the map zoom controls clear of the snapshot panel', async ({ page }) => {
+  await page.goto('/');
+
+  const panel = page.locator('.snapshot-panel');
+  const zoom = page.locator('.leaflet-control-zoom');
+  await expect(zoom).toBeVisible();
+
+  for (const viewport of [{ width: 1280, height: 720 }, { width: 320, height: 360 }]) {
+    await page.setViewportSize(viewport);
+    await expect.poll(async () => {
+      const panelBox = await panel.boundingBox();
+      const zoomBox = await zoom.boundingBox();
+      if (!panelBox || !zoomBox) return false;
+
+      return panelBox.x + panelBox.width <= zoomBox.x ||
+        zoomBox.x + zoomBox.width <= panelBox.x ||
+        panelBox.y + panelBox.height <= zoomBox.y ||
+        zoomBox.y + zoomBox.height <= panelBox.y;
+    }).toBe(true);
+  }
+});

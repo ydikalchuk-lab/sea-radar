@@ -43,7 +43,8 @@ export default function LeafletMap({ config, vessels, selectedId, onSelect, view
       if (!active) return;
 
       leafletRef.current = leaflet;
-      map = leaflet.map(container, { maxBounds: config.bounds }).setView(config.center, config.zoom);
+      map = leaflet.map(container, { maxBounds: config.bounds, zoomControl: false }).setView(config.center, config.zoom);
+      leaflet.control.zoom({ position: 'topright' }).addTo(map);
       leaflet.tileLayer(config.tileUrl, { attribution: config.tileAttribution }).addTo(map);
       vesselLayerRef.current = leaflet.layerGroup().addTo(map);
       mapRef.current = map;

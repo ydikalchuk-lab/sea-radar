@@ -548,3 +548,46 @@ test('fails closed on a synthetic inconsistent successful snapshot payload', asy
   await expect(page.locator('.demo-data-label')).toBeVisible();
   await expect(page.getByText('Спроба: не вдалося отримати дані: Внутрішня помилка сервера')).toBeVisible();
 });
+
+test('keeps the snapshot panel compact and within a short mobile viewport', async ({ page }) => {
+  await page.route('**/api/snapshot', (route) => route.fulfill({
+    status: 502,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      ok: false,
+      attemptedAt: '2026-09-30T12:34:56.000Z',
+      error: { code: 'connect_failed', message: 'ignored server message' },
+    }),
+  }));
+
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto('/');
+  const panel = page.locator('.snapshot-panel');
+  await page.locator('[data-vessel-id="demo-2"]').click();
+  await expect(page.getByRole('complementary', { name: 'Картка судна' })).toBeVisible();
+  await expect.poll(async () => (await panel.boundingBox())?.width ?? 0).toBeLessThanOrEqual(360);
+
+  await page.setViewportSize({ width: 320, height: 360 });
+  const panelBox = await panel.boundingBox();
+  const viewport = page.viewportSize();
+  if (!panelBox || !viewport) throw new Error('Panel and viewport must be measurable');
+
+  expect(panelBox.x).toBeGreaterThanOrEqual(16);
+  expect(panelBox.x + panelBox.width).toBeLessThanOrEqual(viewport.width - 16);
+  expect(panelBox.y).toBeGreaterThanOrEqual(16);
+  expect(panelBox.y + panelBox.height).toBeLessThanOrEqual(viewport.height - 16);
+  await expect.poll(() => panel.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+});
+
+test('distinguishes the selected vessel and gives its details a clear hierarchy', async ({ page }) => {
+  await page.goto('/');
+  const selectedMarker = page.locator('[data-vessel-id="demo-2"]');
+  await selectedMarker.click();
+
+  await expect(selectedMarker).toHaveCSS('border-top-width', '2px');
+  await expect(page.locator('[data-vessel-id="demo-1"]')).toHaveCSS('border-top-width', '0px');
+  await expect(page.locator('.snapshot-panel')).toHaveCSS('border-radius', '12px');
+  await expect(page.locator('.snapshot-panel')).toHaveCSS('padding', '8px');
+  await expect(page.getByRole('complementary', { name: 'Картка судна' }).locator('dd').first())
+    .toHaveCSS('font-variant-numeric', 'tabular-nums');
+});

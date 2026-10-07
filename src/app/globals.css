@@ -35,7 +35,17 @@ main {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: min(420px, calc(100vw - 32px));
+  width: min(360px, calc(100vw - 60px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px;
+  border: 1px solid rgb(23 43 58 / 14%);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgb(23 43 58 / 18%);
+  scrollbar-color: #91a3ad transparent;
+  scrollbar-width: thin;
   pointer-events: none;
 }
 
@@ -47,13 +57,10 @@ main {
 .snapshot-status-message,
 .snapshot-page-hint {
   margin: 0;
-  padding: 10px 12px;
-  border: 1px solid rgb(23 43 58 / 12%);
-  border-radius: 10px;
-  background: rgb(255 255 255 / 96%);
-  box-shadow: 0 2px 8px rgb(23 43 58 / 12%);
+  padding: 8px;
   color: #172b3a;
   font-size: 14px;
+  line-height: 1.4;
 }
 
 .demo-data-label,
@@ -63,21 +70,42 @@ main {
 }
 
 .demo-data-label {
+  border-left: 3px solid #1f526b;
   font-weight: 600;
+}
+
+.snapshot-status-message {
+  padding: 8px 10px;
+  border-left: 3px solid #f2a65a;
+  border-radius: 4px;
+  background: #f3f6f8;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.snapshot-page-hint {
+  padding: 0 8px 4px;
+  color: #526773;
+  font-size: 12px;
 }
 
 .snapshot-load-button {
   width: 100%;
-  padding: 9px 14px;
+  min-height: 44px;
+  padding: 10px 14px;
   border: 1px solid #1f526b;
   border-radius: 8px;
   background: #1f526b;
-  box-shadow: 0 2px 8px rgb(23 43 58 / 18%);
   color: #fff;
   font: inherit;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.snapshot-load-button:hover:not(:disabled) {
+  border-color: #17465d;
+  background: #17465d;
 }
 
 .snapshot-load-button:disabled {
@@ -96,6 +124,13 @@ main {
   place-items: center;
   border: 0;
   background: transparent;
+}
+
+.vessel-marker-container[data-selected='true'] {
+  border: 2px solid #f2a65a;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 90%);
+  box-shadow: 0 0 0 2px #fff, 0 0 12px rgb(23 43 58 / 40%);
 }
 
 .vessel-marker-symbol {
@@ -118,22 +153,19 @@ main {
 
 .snapshot-panel .vessel-card {
   width: 100%;
-  padding: 16px;
-  border: 1px solid rgb(23 43 58 / 12%);
-  border-radius: 12px;
-  background: rgb(255 255 255 / 96%);
-  box-shadow: 0 4px 16px rgb(23 43 58 / 18%);
+  margin-top: 4px;
+  padding: 12px 8px 8px;
+  border-top: 1px solid rgb(23 43 58 / 14%);
   color: #172b3a;
 }
 
 .vessel-card h2 {
-  margin: 0 0 12px;
+  margin: 0 0 10px;
   font-size: 16px;
 }
 
 .vessel-card dl {
   display: grid;
-  gap: 8px;
   margin: 0;
 }
 
@@ -141,6 +173,12 @@ main {
   display: grid;
   grid-template-columns: minmax(100px, 1fr) minmax(0, 1fr);
   gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgb(23 43 58 / 8%);
+}
+
+.vessel-card dl > div:last-child {
+  border-bottom: 0;
 }
 
 .vessel-card dt {
@@ -150,6 +188,10 @@ main {
 
 .vessel-card dd {
   margin: 0;
+  color: #172b3a;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
   overflow-wrap: anywhere;
   text-align: right;
 }

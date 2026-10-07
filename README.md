@@ -35,7 +35,7 @@ Playwright-тести підміняють відповідь локальног
 
 ## Результати перевірки цієї копії
 
-- `npm ci` — успішно; встановлено 37 пакетів. `npm audit` виявив високу вразливість `source-map-js@1.2.1` у ланцюжку `next` → `postcss`; npm указав виправлення `1.2.2`. Виправлення залежностей не застосовували.
+- `npm ci` — успішно перед оновленням advisory; встановлено 37 пакетів. Уразливість транзитивного `source-map-js@1.2.1` у ланцюжку `next` → `postcss` виправлено оновленням lockfile до `1.2.2`; `npm audit` і `npm audit --omit=dev` після оновлення показали 0 вразливостей. `package.json` не змінювався.
 - `npx playwright install chromium` — завершено успішно.
 - `npm run dev` — у цьому середовищі зупинився, бо Windows Application Control блокує нативний SWC binding, потрібний Turbopack; `npm run dev -- --webpack` запустився.
 - `npx playwright test` — 62/62 пройшли: 37 Node-тестів і 25 Chromium-тестів.

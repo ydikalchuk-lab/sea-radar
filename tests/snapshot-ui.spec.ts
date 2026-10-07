@@ -394,7 +394,21 @@ test('preserves the panned map view after a later nonempty snapshot', async ({ p
 
   await button.click();
   await expect(marker).toBeVisible();
-  const finalBox = await marker.boundingBox();
+  const finalBoxes: { x: number; y: number }[] = [];
+  let stableFinalSamples = 0;
+  await expect.poll(async () => {
+    const box = await marker.boundingBox();
+    const previousBox = finalBoxes.at(-1);
+    if (!box) {
+      stableFinalSamples = 0;
+      return stableFinalSamples;
+    }
+    if (previousBox?.x === box.x && previousBox.y === box.y) stableFinalSamples += 1;
+    else stableFinalSamples = 0;
+    finalBoxes.push(box);
+    return stableFinalSamples;
+  }, { timeout: 5_000 }).toBeGreaterThanOrEqual(2);
+  const finalBox = finalBoxes.at(-1);
   if (!finalBox) throw new Error('Updated vessel marker must be measurable');
   expect(finalBox.x).toBe(pannedBox.x);
   expect(finalBox.y).toBe(pannedBox.y);
